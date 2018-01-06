@@ -1,8 +1,8 @@
 import compileall
 import os
+import subprocess
 
 # External modules
-import pep8
 import yaml
 
 FLINTROCK_ROOT_DIR = (
@@ -31,11 +31,9 @@ def test_code_compiles():
         assert result == 1
 
 
-def test_pep8_compliance():
-    style = pep8.StyleGuide(
-        config_file=os.path.join(FLINTROCK_ROOT_DIR, 'tox.ini'))
-    result = style.check_files(TEST_PATHS)
-    assert result.total_errors == 0
+def test_flake8():
+    ret = subprocess.call(['flake8'], cwd=FLINTROCK_ROOT_DIR)
+    assert ret == 0
 
 
 def test_config_template_is_valid():

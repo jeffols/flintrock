@@ -1,7 +1,7 @@
 ![Flintrock logo](https://raw.githubusercontent.com/nchammas/flintrock/master/flintrock-logo.png)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/nchammas/flintrock/blob/master/LICENSE)
-[![Build Status](https://img.shields.io/travis/nchammas/flintrock.svg)](https://travis-ci.org/nchammas/flintrock)
+[![Build Status](https://img.shields.io/travis/nchammas/flintrock/master.svg)](https://travis-ci.org/nchammas/flintrock)
 [![Chat](https://img.shields.io/gitter/room/nchammas/flintrock.svg)](https://gitter.im/nchammas/flintrock)
 
 *Watch [@nchammas](https://github.com/nchammas)'s talk on Flintrock at Spark Summit East 2016: [talk](https://www.youtube.com/watch?v=3aeIpOGrJOA) / [slides](http://www.slideshare.net/SparkSummit/flintrock-a-faster-better-sparkec2-by-nicholas-chammas)*
@@ -18,10 +18,10 @@ Here's a quick way to launch a cluster on EC2, assuming you already have an [AWS
 ```sh
 flintrock launch test-cluster \
     --num-slaves 1 \
-    --spark-version 1.6.1 \
+    --spark-version 2.2.0 \
     --ec2-key-name key_name \
     --ec2-identity-file /path/to/key.pem \
-    --ec2-ami ami-08111162 \
+    --ec2-ami ami-a4c7edb2 \
     --ec2-user ec2-user
 ```
 
@@ -42,6 +42,8 @@ Other things you can do with Flintrock include:
 ```sh
 flintrock login test-cluster
 flintrock describe test-cluster
+flintrock add-slaves test-cluster --num-slaves 2
+flintrock remove-slaves test-cluster --num-slaves 1
 flintrock run-command test-cluster 'sudo yum install -y package'
 flintrock copy-file test-cluster /local/path /remote/path
 ```
@@ -55,12 +57,44 @@ flintrock <subcommand> --help
 
 That's not all. Flintrock has a few more [features](#features) that you may find interesting.
 
+### Accessing data on S3
+
+We recommend you access data on S3 from your Flintrock cluster by following
+these steps:
+
+1. Setup an [IAM Role](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html)
+   that grants access to S3 as desired. Reference this role when you launch
+   your cluster using the `--ec2-instance-profile-name` option (or its
+   equivalent in your `config.yaml` file).
+2. Reference S3 paths in your Spark code using the `s3a://` prefix. `s3a://` is
+   backwards compatible with `s3n://` and replaces both `s3n://` and `s3://`.
+   The Hadoop project [recommends using `s3a://`](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html#S3A)
+   since it is actively developed, supports larger files, and offers
+   better performance.
+3. Make sure Flintrock is configured to use Hadoop/HDFS 2.7+. Earlier
+   versions of Hadoop do not have solid implementations of `s3a://`.
+   Flintrock's default is Hadoop 2.7.4, so you don't need to do anything
+   here if you're using a vanilla configuration.
+
+With this approach you don't need to copy around your AWS credentials
+or pass them into your Spark programs. As long as the assigned IAM role
+allows it, Spark will be able to read and write data to S3 simply by
+referencing the appropriate path (e.g. `s3a://bucket/path/to/file`).
+
 
 ## Installation
 
-Before using Flintrock, take a quick look at the [copyright](https://github.com/nchammas/flintrock/blob/master/COPYRIGHT) notice and [license](https://github.com/nchammas/flintrock/blob/master/LICENSE) and make sure you're OK with their terms.
+Before using Flintrock, take a quick look at the
+[copyright](https://github.com/nchammas/flintrock/blob/master/COPYRIGHT)
+notice and [license](https://github.com/nchammas/flintrock/blob/master/LICENSE)
+and make sure you're OK with their terms.
 
-**Flintrock requires Python 3.4 or newer**, unless you are using one of our **standalone packages**. Flintrock has been thoroughly tested only on OS X, but it should run on all POSIX systems. We have plans to [add Windows support](https://github.com/nchammas/flintrock/issues/46) in the future, too.
+**Flintrock requires Python 3.4 or newer**, unless you are using one
+of our **standalone packages**. Flintrock has been thoroughly tested
+only on OS X, but it should run on all POSIX systems.
+A motivated contributor should be able to add
+[Windows support](https://github.com/nchammas/flintrock/issues/46)
+without too much trouble, too.
 
 ### Release version
 
@@ -91,7 +125,7 @@ unzip it to a location of your choice, and run the `flintrock` executable inside
 For example:
 
 ```sh
-flintrock_version="0.4.0"
+flintrock_version="0.8.0"
 
 curl --location --remote-name "https://github.com/nchammas/flintrock/releases/download/v$flintrock_version/Flintrock-$flintrock_version-standalone-OSX-x86_64.zip"
 unzip -q -d flintrock "Flintrock-$flintrock_version-standalone-OSX-x86_64.zip"
@@ -186,7 +220,7 @@ provider: ec2
 
 services:
   spark:
-    version: 1.6.1
+    version: 2.2.0
 
 launch:
   num-slaves: 1
@@ -197,7 +231,7 @@ providers:
     identity-file: /path/to/.ssh/key.pem
     instance-type: m3.medium
     region: us-east-1
-    ami: ami-08111162
+    ami: ami-a4c7edb2
     user: ec2-user
 ```
 
@@ -217,7 +251,7 @@ flintrock launch test-cluster \
 
 ### Fast Launches
 
-Flintrock is really fast. This is how quickly it can launch fully operational clusters on EC2 compared to [spark-ec2](https://spark.apache.org/docs/latest/ec2-scripts.html).
+Flintrock is really fast. This is how quickly it can launch fully operational clusters on EC2 compared to [spark-ec2](https://github.com/amplab/spark-ec2).
 
 #### Setup
 
@@ -270,13 +304,13 @@ We here at project Flintrock are much more modest in our abilities. We are best 
 
 ## Motivation
 
-*Note: The explanation here is provided from the perspective of Flintrock's original author, Nicholas Chammas.*
+*Note: The explanation here is provided from the perspective of Flintrock's original author, Nicholas Chammas. spark-ec2 is still an active project, so the problems described below may no longer exist. However, they were all present at the time Flintrock was created.*
 
-I got started with Spark by using [spark-ec2](http://spark.apache.org/docs/latest/ec2-scripts.html). It's one of the biggest reasons I found Spark so accessible. I didn't need to spend time upfront working through some setup guide before I could work on a "real" problem. Instead, with a simple spark-ec2 command I was able to launch a large, working cluster and get straight to business.
+I got started with Spark by using [spark-ec2](https://github.com/amplab/spark-ec2). It's one of the biggest reasons I found Spark so accessible. I didn't need to spend time upfront working through some setup guide before I could work on a "real" problem. Instead, with a simple spark-ec2 command I was able to launch a large, working cluster and get straight to business.
 
 As I became a heavy user of spark-ec2, several limitations stood out and became an increasing pain. They provided me with the motivation for this project.
 
-Among those limitations are:
+Among those limitations were:
 
 * **Slow launches**: spark-ec2 cluster launch times increase linearly with the number of slaves being created. For example, it takes spark-ec2 **[over an hour](https://issues.apache.org/jira/browse/SPARK-5189)** to launch a cluster with 100 slaves. ([SPARK-4325](https://issues.apache.org/jira/browse/SPARK-4325), [SPARK-5189](https://issues.apache.org/jira/browse/SPARK-5189))
 * **No support for configuration files**: spark-ec2 does not support reading options from a config file, so users are always forced to type them in at the command line. ([SPARK-925](https://issues.apache.org/jira/browse/SPARK-925))
@@ -286,7 +320,16 @@ Among those limitations are:
 * **Poor support for programmatic use cases**: spark-ec2 was not built with programmatic use in mind, so many flows are difficult or impossible to automate. ([SPARK-5627](https://issues.apache.org/jira/browse/SPARK-5627), [SPARK-5629](https://issues.apache.org/jira/browse/SPARK-5629))
 * **No standalone distribution**: spark-ec2 comes bundled with Spark and has no independent releases or distribution. Instead of being a nimble tool that can progress independently and be installed separately, it is tied to Spark's release cycle and distributed with Spark, which clocks in at a few hundred megabytes.
 
-Flintrock addresses, or will address, all of these shortcomings.
+Flintrock addresses all of these shortcomings.
+
+### Why didn't you build Flintrock on top of an orchestration tool?
+
+People have asked me whether I considered building Flintrock on top of Ansible, Terraform, Docker, or something else. I looked into some of these things back when Flintrock was just an idea in my head and decided against using any of them for two basic reasons:
+
+1. **Fun**: I didn't have any experience with these tools, and it looked both simple enough and more fun to build something "from scratch".
+2. **Focus**: I wanted a single-purpose tool with a very limited focus, not a module or set of scripts that were part of a sprawling framework that did a lot of different things.
+
+These are not necessarily the right reasons to build "from scratch", but they were my reasons. If you are already comfortable with any of the popular orchestration tools out there, you may find it more attractive to use them rather than add a new standalone tool to your toolchain.
 
 
 ## About the Flintrock Logo
