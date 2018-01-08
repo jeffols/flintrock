@@ -26,7 +26,6 @@ from .exceptions import (
 )
 from .ssh import generate_ssh_key_pair
 
-
 logger = logging.getLogger('flintrock.ec2')
 
 
@@ -36,7 +35,7 @@ class NoDefaultVPC(Error):
             "Flintrock could not find a default VPC in {r}. "
             "Please explicitly specify a VPC to work with in that region. "
             "Flintrock does not support managing EC2 clusters outside a VPC."
-            .format(r=region)
+                .format(r=region)
         )
         self.region = region
 
@@ -54,6 +53,7 @@ def timeit(func):
         end = datetime.now().replace(microsecond=0)
         logger.info("{f} finished in {t}.".format(f=func.__name__, t=(end - start)))
         return res
+
     return wrapper
 
 
@@ -81,19 +81,31 @@ class EC2Cluster(FlintrockCluster):
 
     @property
     def master_ip(self):
-        return self.master_instance.public_ip_address
+        if self.subnet_is_private:
+            return self.master_instance.private_ip_address
+        else:
+            return self.master_instance.public_ip_address
 
     @property
     def master_host(self):
-        return self.master_instance.public_dns_name
+        if self.subnet_is_private:
+            return self.master_instance.private_dns_name
+        else:
+            return self.master_instance.public_dns_name
 
     @property
     def slave_ips(self):
-        return [i.public_ip_address for i in self.slave_instances]
+        if self.subnet_is_private:
+            return [i.private_ip_address for i in self.slave_instances]
+        else:
+            return [i.public_ip_address for i in self.slave_instances]
 
     @property
     def slave_hosts(self):
-        return [i.public_dns_name for i in self.slave_instances]
+        if self.subnet_is_private:
+            return [i.private_dns_name for i in self.slave_instances]
+        else:
+            return [i.public_dns_name for i in self.slave_instances]
 
     @property
     def num_masters(self):
@@ -102,6 +114,11 @@ class EC2Cluster(FlintrockCluster):
     @property
     def num_slaves(self):
         return len(self.slave_instances)
+
+    @property
+    def subnet_is_private(self):
+        ec2 = boto3.resource(service_name='ec2', region_name=self.region)
+        return not ec2.Subnet(self.master_instance.subnet_id).map_public_ip_on_launch
 
     @property
     def state(self):
@@ -127,7 +144,9 @@ class EC2Cluster(FlintrockCluster):
             if logger.isEnabledFor(logging.DEBUG):
                 waiting_instances = [i for i in self.instances if i.state['Name'] != state]
                 sample = ', '.join(["'{}'".format(i.id) for i in waiting_instances][:3])
-                logger.debug("{size} instances not in state '{state}': {sample}, ...".format(size=len(waiting_instances), state=state, sample=sample))
+                logger.debug(
+                    "{size} instances not in state '{state}': {sample}, ...".format(size=len(waiting_instances),
+                                                                                    state=state, sample=sample))
             time.sleep(3)
             # Update metadata for all instances in one shot. We don't want
             # to make a call to AWS for each of potentially hundreds of
@@ -175,9 +194,9 @@ class EC2Cluster(FlintrockCluster):
 
         (ec2.instances
             .filter(
-                Filters=[
-                    {'Name': 'instance-id', 'Values': [i.id for i in self.instances]}
-                ])
+            Filters=[
+                {'Name': 'instance-id', 'Values': [i.id for i in self.instances]}
+            ])
             .terminate())
         self.wait_for_state('terminated')
 
@@ -196,9 +215,9 @@ class EC2Cluster(FlintrockCluster):
         ec2 = boto3.resource(service_name='ec2', region_name=self.region)
         (ec2.instances
             .filter(
-                Filters=[
-                    {'Name': 'instance-id', 'Values': [i.id for i in self.instances]}
-                ])
+            Filters=[
+                {'Name': 'instance-id', 'Values': [i.id for i in self.instances]}
+            ])
             .start())
         self.wait_for_state('running')
 
@@ -222,9 +241,9 @@ class EC2Cluster(FlintrockCluster):
         ec2 = boto3.resource(service_name='ec2', region_name=self.region)
         (ec2.instances
             .filter(
-                Filters=[
-                    {'Name': 'instance-id', 'Values': [i.id for i in self.instances]}
-                ])
+            Filters=[
+                {'Name': 'instance-id', 'Values': [i.id for i in self.instances]}
+            ])
             .stop())
         self.wait_for_state('stopped')
 
@@ -305,9 +324,9 @@ class EC2Cluster(FlintrockCluster):
 
             (ec2.instances
                 .filter(
-                    Filters=[
-                        {'Name': 'instance-id', 'Values': [i.id for i in new_slave_instances]}
-                    ])
+                Filters=[
+                    {'Name': 'instance-id', 'Values': [i.id for i in new_slave_instances]}
+                ])
                 .create_tags(Tags=slave_tags))
 
             existing_slaves = {i.public_ip_address for i in self.slave_instances}
@@ -365,9 +384,9 @@ class EC2Cluster(FlintrockCluster):
 
         (ec2.instances
             .filter(
-                Filters=[
-                    {'Name': 'instance-id', 'Values': [i.id for i in removed_slave_instances]}
-                ])
+            Filters=[
+                {'Name': 'instance-id', 'Values': [i.id for i in removed_slave_instances]}
+            ])
             .terminate())
 
     def run_command_check(self):
@@ -452,14 +471,7 @@ def check_network_config(*, region_name: str, vpc_id: str, subnet_id: str):
             "{v} does not have DNS hostnames enabled. "
             "Flintrock requires DNS hostnames to be enabled.\n"
             "See: https://github.com/nchammas/flintrock/issues/43"
-            .format(v=vpc_id)
-        )
-    if not ec2.Subnet(subnet_id).map_public_ip_on_launch:
-        raise ConfigurationNotSupported(
-            "{s} does not auto-assign public IP addresses. "
-            "Flintrock requires public IP addresses.\n"
-            "See: https://github.com/nchammas/flintrock/issues/14"
-            .format(s=subnet_id)
+                .format(v=vpc_id)
         )
 
 
@@ -482,7 +494,7 @@ def get_security_groups(
     if missing_group_names:
         raise Error(
             "Could not find the following security group{s}: {groups}"
-            .format(
+                .format(
                 s='' if len(missing_group_names) == 1 else 's',
                 groups=', '.join(list(missing_group_names))))
 
@@ -542,7 +554,7 @@ def get_or_create_flintrock_security_groups(
     # Rules for the client interacting with the cluster.
     flintrock_client_ip = (
         urllib.request.urlopen('http://checkip.amazonaws.com/')
-        .read().decode('utf-8').strip())
+            .read().decode('utf-8').strip())
     flintrock_client_cidr = '{ip}/32'.format(ip=flintrock_client_ip)
 
     # TODO: Services should be responsible for registering what ports they want exposed.
@@ -740,7 +752,7 @@ def _create_instances(
                     failure_reasons = {r['Status']['Code'] for r in failed_requests}
                     raise Error(
                         "The spot request failed for the following reason{s}: {reasons}"
-                        .format(
+                            .format(
                             s='' if len(failure_reasons) == 1 else 's',
                             reasons=', '.join(failure_reasons)))
 
@@ -921,9 +933,9 @@ def launch(
 
         (ec2.instances
             .filter(
-                Filters=[
-                    {'Name': 'instance-id', 'Values': [master_instance.id]}
-                ])
+            Filters=[
+                {'Name': 'instance-id', 'Values': [master_instance.id]}
+            ])
             .create_tags(Tags=master_tags))
 
         slave_tags = [
@@ -933,9 +945,9 @@ def launch(
 
         (ec2.instances
             .filter(
-                Filters=[
-                    {'Name': 'instance-id', 'Values': [i.id for i in slave_instances]}
-                ])
+            Filters=[
+                {'Name': 'instance-id', 'Values': [i.id for i in slave_instances]}
+            ])
             .create_tags(Tags=slave_tags))
 
         cluster = EC2Cluster(
@@ -982,7 +994,7 @@ def get_cluster(*, cluster_name: str, region: str, vpc_id: str) -> EC2Cluster:
     return cluster[0]
 
 
-def get_clusters(*, cluster_names: list=[], region: str, vpc_id: str) -> list:
+def get_clusters(*, cluster_names: list = [], region: str, vpc_id: str) -> list:
     """
     Get all the named clusters. If no names are given, get all clusters.
 
@@ -1120,7 +1132,7 @@ def _cleanup_instances(*, instances: list, assume_yes: bool, region: str):
         if not assume_yes:
             yes = click.confirm(
                 text="Do you want to terminate the {c} instances created by this operation?"
-                     .format(c=len(instances)),
+                    .format(c=len(instances)),
                 err=True,
                 default=True)
 
@@ -1128,7 +1140,7 @@ def _cleanup_instances(*, instances: list, assume_yes: bool, region: str):
             print("Terminating instances...", file=sys.stderr)
             (ec2.instances
                 .filter(
-                    Filters=[
-                        {'Name': 'instance-id', 'Values': [i.id for i in instances]}
-                    ])
+                Filters=[
+                    {'Name': 'instance-id', 'Values': [i.id for i in instances]}
+                ])
                 .terminate())
