@@ -505,7 +505,8 @@ def get_or_create_flintrock_security_groups(
         *,
         cluster_name,
         vpc_id,
-        region) -> "List[boto3.resource('ec2').SecurityGroup]":
+        region,
+        tags) -> "List[boto3.resource('ec2').SecurityGroup]":
     """
     If they do not already exist, create all the security groups needed for a
     Flintrock cluster.
@@ -550,6 +551,7 @@ def get_or_create_flintrock_security_groups(
             GroupName=flintrock_group_name,
             Description="Flintrock base group",
             VpcId=vpc_id)
+        ec2.create_tags(Resources=[flintrock_group.group_id], Tags=tags)
 
     # Rules for the client interacting with the cluster.
     flintrock_client_ip = (
@@ -620,6 +622,7 @@ def get_or_create_flintrock_security_groups(
             GroupName=cluster_group_name,
             Description="Flintrock cluster group",
             VpcId=vpc_id)
+        ec2.create_tags(Resources=[cluster_group.group_id], Tags=tags)
 
     try:
         cluster_group.authorize_ingress(
@@ -875,7 +878,8 @@ def launch(
     flintrock_security_groups = get_or_create_flintrock_security_groups(
         cluster_name=cluster_name,
         vpc_id=vpc_id,
-        region=region)
+        region=region,
+        tags=tags)
     user_security_groups = get_security_groups(
         vpc_id=vpc_id,
         region=region,
